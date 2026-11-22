@@ -84,7 +84,7 @@ public class red_hiveup extends OpMode {
     // =========================================
 
     // Intake servo remains IN during entire auto
-    private static final double INTAKE_SERVO_IN = 0.2;
+    private static final double INTAKE_SERVO_IN = 0.18;
 
     private static final double SHOOTER_SERVO_CLOSED = 0.88;
     private static final double SHOOTER_SERVO_OPEN = 0.5;

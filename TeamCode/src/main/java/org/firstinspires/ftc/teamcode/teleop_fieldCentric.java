@@ -20,8 +20,8 @@ import org.firstinspires.ftc.teamcode.pedro.Constants;
 public class teleop_fieldCentric extends OpMode {
 
     // Intake servo positions
-    private final double intake_servo_in = 0.2;
-    private final double intake_servo_out = 0.76;
+    private final double intake_servo_in = 0.18;
+    private final double intake_servo_out = 0.69;
 
     private double shooter_servo_closed = 0.88;
     private double shooter_servo_open = 0.5;
@@ -80,8 +80,6 @@ public class teleop_fieldCentric extends OpMode {
                 Servo.class, "shooter_servo2"
         );
 
-        intake_servo.setPosition(intake_servo_in);
-        is_intake_servo_in = true;
 
         // Pedro Pathing initialization
         isAutoDrive = false;
@@ -105,6 +103,8 @@ public class teleop_fieldCentric extends OpMode {
     }
     @Override
     public void start() {
+        intake_servo.setPosition(intake_servo_in);
+        is_intake_servo_in = true;
 
         if (OpModeStorage.autonomousEndPose != null) {
 
@@ -137,6 +137,7 @@ public class teleop_fieldCentric extends OpMode {
             pathTimer.reset();
             driverOverride = false;
         }
+
 
         // Check for driver override
         driverOverride =
@@ -198,8 +199,15 @@ public class teleop_fieldCentric extends OpMode {
 
         if(gamepad2.left_trigger > 0.1 && gamepad2.right_trigger > 0.1)
         {
-            intake_motor.setPower(-.5);
-            transfer_motor.setPower(-.45);
+            if(gamepad2.a)
+            {
+                intake_motor.setPower(-1);
+                transfer_motor.setPower(-1);
+            }
+            else {
+                intake_motor.setPower(-.5);
+                transfer_motor.setPower(-.45);
+            }
             shooter_servo.setPosition(shooter_servo_closed);
             shooter_servo2.setPosition(shooter_servo2_closed);
             shooterTimer.reset();

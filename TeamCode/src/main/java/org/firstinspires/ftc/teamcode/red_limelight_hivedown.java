@@ -34,16 +34,16 @@ public class red_limelight_hivedown extends OpMode {
     private static final double TAG_CONFIRM_MS = 150;
 
     // Begin feeding 3 seconds after first detection
-    private static final double TAG_SHOOT_DELAY_MS = 3000;
+    private static final double TAG_SHOOT_DELAY_MS = 1000;
 
     // Ignore old Limelight results
     private static final long MAX_RESULT_AGE_MS = 200;
 
     // Optional fallback if no AprilTag is detected
     // Disabled so shooting requires AprilTag detection
-    private static final boolean ENABLE_TIME_FALLBACK = false;
+    private static final boolean ENABLE_TIME_FALLBACK = true;
 
-    private static final double FALLBACK_SHOOT_MS = 17000;
+    private static final double FALLBACK_SHOOT_MS = 22000;
 
     // =========================================
     // SHOOTING CONSTANTS
@@ -56,7 +56,7 @@ public class red_limelight_hivedown extends OpMode {
     // FLYWHEEL CONSTANTS
     // =========================================
 
-    private static final double FLYWHEEL_VELOCITY = 1620;
+    private static final double FLYWHEEL_VELOCITY = 1640;
 
     private static final double FLYWHEEL_P = 270;
     private static final double FLYWHEEL_I = 0;
@@ -82,7 +82,7 @@ public class red_limelight_hivedown extends OpMode {
     // =========================================
 
     // Intake stays IN for entire autonomous
-    private static final double INTAKE_SERVO_IN = 0.2;
+    private static final double INTAKE_SERVO_IN = 0.18;
 
     private static final double SHOOTER_SERVO_CLOSED = 0.88;
     private static final double SHOOTER_SERVO_OPEN = 0.5;
@@ -391,9 +391,12 @@ public class red_limelight_hivedown extends OpMode {
                         autonomousTimer.milliseconds()
                                 >= FALLBACK_SHOOT_MS) {
 
-                    shootTrigger = "Timed Fallback";
+                    followTo(clearFlowerPose);
+                    setState(AutoState.CLEAR_FLOWER);
 
-                    beginShooting();
+                    //shootTrigger = "Timed Fallback";
+
+                    //beginShooting();
                 }
 
                 break;
@@ -464,6 +467,7 @@ public class red_limelight_hivedown extends OpMode {
 
                 if (pathFinishedOrTimedOut(
                         CLEAR_FLOWER_TIMEOUT_MS)) {
+                    flywheel_motor.setVelocity(0);
 
                     // Follow parking path from
                     // current estimated position
