@@ -54,11 +54,12 @@ public class teleop_fieldCentric extends OpMode {
 
     private static final double PRIMARY_RANGE = 56.43;
     private static final double ALTERNATE_RANGE = 55.87;
-    private static final double SHOT_ARC_HALF_ANGLE = Math.toRadians(15);
+    private static final double SHOT_ARC_HALF_WIDTH = 30;
     private static final double SHOT_HEADING_TOLERANCE = Math.toRadians(2);
-    private static final double AIM_TURN_GAIN = 1.8;
-    private static final double MIN_AIM_TURN_POWER = 0.12;
-    private static final double MAX_AIM_TURN_POWER = 0.55;
+    // Match the proportional heading gain already tuned for Pedro path following.
+    private static final double AIM_TURN_GAIN = 3.56;
+    private static final double MIN_AIM_TURN_POWER = 0.15;
+    private static final double MAX_AIM_TURN_POWER = 0.80;
     private static final double SHOT_DEADLINE_MS = 1000;
     private static final double SHOT_SETTLE_MS = 300;
     private static final double SHOOTER_SERVO_DELAY_MS = 150;
@@ -77,27 +78,30 @@ public class teleop_fieldCentric extends OpMode {
         final double centerY;
         final double referenceHeading;
         final double radius;
+        final double halfAngle;
 
         ShootingArc(String side, Pose reference, double calibratedRange) {
             this.side = side;
             referenceHeading = reference.heading();
-            centerX = reference.x() + calibratedRange * Math.cos(referenceHeading);
-            centerY = reference.y() + calibratedRange * Math.sin(referenceHeading);
+            // Pedro heading points toward the robot's front. The shooter points rearward.
+            centerX = reference.x() - calibratedRange * Math.cos(referenceHeading);
+            centerY = reference.y() - calibratedRange * Math.sin(referenceHeading);
             radius = calibratedRange;
+            halfAngle = Math.asin(Math.min(1, SHOT_ARC_HALF_WIDTH / radius));
         }
 
-        double headingToCenter(double x, double y) {
-            return Math.atan2(centerY - y, centerX - x);
+        double headingForRearAim(double x, double y) {
+            return Math.atan2(y - centerY, x - centerX);
         }
 
         Pose closestPose(Pose robot) {
-            double heading = headingToCenter(robot.x(), robot.y());
+            double heading = headingForRearAim(robot.x(), robot.y());
             double offset = wrapAngle(heading - referenceHeading);
             double closestHeading = referenceHeading
-                    + Math.max(-SHOT_ARC_HALF_ANGLE, Math.min(SHOT_ARC_HALF_ANGLE, offset));
-            double x = centerX - radius * Math.cos(closestHeading);
-            double y = centerY - radius * Math.sin(closestHeading);
-            return new Pose(x, y, headingToCenter(x, y));
+                    + Math.max(-halfAngle, Math.min(halfAngle, offset));
+            double x = centerX + radius * Math.cos(closestHeading);
+            double y = centerY + radius * Math.sin(closestHeading);
+            return new Pose(x, y, headingForRearAim(x, y));
         }
     }
 
@@ -253,9 +257,10 @@ public class teleop_fieldCentric extends OpMode {
         telemetry.addData("Hive alliance", OpModeStorage.alliance);
         telemetry.addData("Hive shot", shotPhase);
         if (activeArc != null) {
-            double desiredHeading = activeArc.headingToCenter(robotPose.x(), robotPose.y());
+            double desiredHeading = activeArc.headingForRearAim(robotPose.x(), robotPose.y());
             double error = wrapAngle(desiredHeading - robotPose.heading());
-            telemetry.addData("Aim goal", activeArc.side);
+            telemetry.addData("Aim goal", "%s center (%.1f, %.1f)",
+                    activeArc.side, activeArc.centerX, activeArc.centerY);
             telemetry.addData("Aim heading", "%.1f deg (error %+.1f deg)",
                     (Math.toDegrees(desiredHeading) + 360) % 360, Math.toDegrees(error));
         }
@@ -274,7 +279,7 @@ public class teleop_fieldCentric extends OpMode {
             shotPhase = ShotPhase.ALIGNING;
         }
 
-        double desiredHeading = activeArc.headingToCenter(robot.x(), robot.y());
+        double desiredHeading = activeArc.headingForRearAim(robot.x(), robot.y());
         double error = wrapAngle(desiredHeading - robot.heading());
         boolean aligned = Math.abs(error) <= SHOT_HEADING_TOLERANCE;
         boolean deadlineReached = aimTimer.milliseconds() >= SHOT_DEADLINE_MS;
@@ -316,6 +321,7 @@ public class teleop_fieldCentric extends OpMode {
         }
 
         follower.manual(new DrivePowers(0, 0, turn));
+        telemetry.addData("Aim turn command", "%+.2f", turn);
     }
 
     private void openShooter(ShotPhase shootingPhase) {
