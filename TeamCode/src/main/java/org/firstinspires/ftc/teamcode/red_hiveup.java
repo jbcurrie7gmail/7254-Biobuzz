@@ -236,7 +236,7 @@ public class red_hiveup extends OpMode {
     public void start() {
 
         // Clear previously stored autonomous pose
-        OpModeStorage.autonomousEndPose = null;
+        OpModeStorage.beginAutonomous(OpModeStorage.Alliance.RED);
 
         timeoutCount = 0;
         lastTimeout = "None";

@@ -32,7 +32,7 @@ public class blue_hiveup_two_tips extends OpMode {
     // APRILTAG
     // =========================================
 
-    private static final int APRILTAG_PIPELINE = 1;
+    private static final int APRILTAG_PIPELINE = OpModeStorage.Alliance.BLUE.aprilTagPipeline;
     private static final long MAX_RESULT_AGE_MS = 200;
     private static final double TAG_WAIT_MS = 500;
 
@@ -391,7 +391,7 @@ public class blue_hiveup_two_tips extends OpMode {
     @Override
     public void start() {
 
-        OpModeStorage.autonomousEndPose = null;
+        OpModeStorage.beginAutonomous(OpModeStorage.Alliance.BLUE);
 
         timeoutCount = 0;
         lastTimeout = "None";

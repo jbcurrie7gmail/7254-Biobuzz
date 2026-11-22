@@ -30,7 +30,7 @@ public class blue_limelight_hivedown extends OpMode {
     // =========================================
 
     // BLUE APRILTAG PIPELINE
-    private static final int APRILTAG_PIPELINE = 1;
+    private static final int APRILTAG_PIPELINE = OpModeStorage.Alliance.BLUE.aprilTagPipeline;
 
     // Confirm detection for 150 milliseconds
     private static final double TAG_CONFIRM_MS = 150;
@@ -281,7 +281,7 @@ public class blue_limelight_hivedown extends OpMode {
     public void start() {
 
         // Clear previous autonomous ending pose
-        OpModeStorage.autonomousEndPose = null;
+        OpModeStorage.beginAutonomous(OpModeStorage.Alliance.BLUE);
 
         timeoutCount = 0;
         lastTimeout = "None";

@@ -27,8 +27,8 @@ public class red_limelight_hivedown extends OpMode {
     // LIMELIGHT SETTINGS
     // =========================================
 
-    // BLUE APRILTAG PIPELINE
-    private static final int APRILTAG_PIPELINE = 0;
+    // RED APRILTAG PIPELINE
+    private static final int APRILTAG_PIPELINE = OpModeStorage.Alliance.RED.aprilTagPipeline;
 
     // Confirm detection for 150 milliseconds
     private static final double TAG_CONFIRM_MS = 150;
@@ -250,7 +250,7 @@ public class red_limelight_hivedown extends OpMode {
 
         limelight.setPollRateHz(100);
 
-        // SELECT BLUE APRILTAG PIPELINE 1
+        // SELECT RED APRILTAG PIPELINE 0
         limelight.pipelineSwitch(APRILTAG_PIPELINE);
 
         limelight.start();
@@ -279,7 +279,7 @@ public class red_limelight_hivedown extends OpMode {
     public void start() {
 
         // Clear previous autonomous ending pose
-        OpModeStorage.autonomousEndPose = null;
+        OpModeStorage.beginAutonomous(OpModeStorage.Alliance.RED);
 
         timeoutCount = 0;
         lastTimeout = "None";
@@ -614,7 +614,7 @@ public class red_limelight_hivedown extends OpMode {
     }
 
     // =========================================
-    // APRILTAG DETECTION - PIPELINE 1
+    // APRILTAG DETECTION - PIPELINE 0
     // =========================================
 
     private boolean anyAprilTagVisible() {

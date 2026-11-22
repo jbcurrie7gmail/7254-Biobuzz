@@ -52,13 +52,68 @@ public class teleop_fieldCentric extends OpMode {
         IDLE, APPROACH, IN, OUT
     }
 
-    private final Timer pathTimer = new Timer();
+    private static final double PRIMARY_RANGE = 56.43;
+    private static final double ALTERNATE_RANGE = 55.87;
+    private static final double SHOT_ARC_HALF_ANGLE = Math.toRadians(15);
+    private static final double SHOT_HEADING_TOLERANCE = Math.toRadians(2);
+    private static final double AIM_TURN_GAIN = 1.8;
+    private static final double MIN_AIM_TURN_POWER = 0.12;
+    private static final double MAX_AIM_TURN_POWER = 0.55;
+    private static final double SHOT_DEADLINE_MS = 1000;
+    private static final double SHOT_SETTLE_MS = 300;
+    private static final double SHOOTER_SERVO_DELAY_MS = 150;
+    private static final double TRIGGER_THRESHOLD = 0.1;
+
+    // Both alliances use the same coordinates from their own hive-up corner.
+    private static final ShootingArc PRIMARY_ARC =
+            new ShootingArc("Primary", new Pose(56, 7.75, Math.toRadians(270)), PRIMARY_RANGE);
+    private static final ShootingArc ALTERNATE_ARC =
+            new ShootingArc("Alternate",
+                    new Pose(59.1205, 129.5394, Math.toRadians(88.2604)), ALTERNATE_RANGE);
+
+    private static final class ShootingArc {
+        final String side;
+        final double centerX;
+        final double centerY;
+        final double referenceHeading;
+        final double radius;
+
+        ShootingArc(String side, Pose reference, double calibratedRange) {
+            this.side = side;
+            referenceHeading = reference.heading();
+            centerX = reference.x() + calibratedRange * Math.cos(referenceHeading);
+            centerY = reference.y() + calibratedRange * Math.sin(referenceHeading);
+            radius = calibratedRange;
+        }
+
+        double headingToCenter(double x, double y) {
+            return Math.atan2(centerY - y, centerX - x);
+        }
+
+        Pose closestPose(Pose robot) {
+            double heading = headingToCenter(robot.x(), robot.y());
+            double offset = wrapAngle(heading - referenceHeading);
+            double closestHeading = referenceHeading
+                    + Math.max(-SHOT_ARC_HALF_ANGLE, Math.min(SHOT_ARC_HALF_ANGLE, offset));
+            double x = centerX - radius * Math.cos(closestHeading);
+            double y = centerY - radius * Math.sin(closestHeading);
+            return new Pose(x, y, headingToCenter(x, y));
+        }
+    }
+
+    private enum ShotPhase {
+        IDLE, ALIGNING, SETTLING, SHOOTING, SHOOTING_AT_TIMEOUT
+    }
+
+    private ShootingArc activeArc;
+    private ShotPhase shotPhase = ShotPhase.IDLE;
+    private final Timer aimTimer = new Timer();
     private final Timer shooterTimer = new Timer();
+    private final Timer pathTimer = new Timer();
     private PickupPhase pickupPhase = PickupPhase.IDLE;
     private Pose flowerApproach;
     private Pose flowerInside;
     private int flowerCyclesCompleted;
-
 
     @Override
     public void init() {
@@ -87,7 +142,6 @@ public class teleop_fieldCentric extends OpMode {
         shooter_servo2 = hardwareMap.get(
                 Servo.class, "shooter_servo2"
         );
-
 
         // Pedro Pathing initialization
 
@@ -134,14 +188,29 @@ public class teleop_fieldCentric extends OpMode {
                 Math.abs(gamepad1.left_stick_y) > 0.2 ||
                 Math.abs(gamepad1.right_stick_x) > 0.2;
 
+        boolean leftHeld = gamepad2.left_trigger > TRIGGER_THRESHOLD;
+        // Both triggers can start reverse intake after the operator releases the shot.
+        boolean shotRequested = leftHeld
+                && (shotPhase != ShotPhase.IDLE || gamepad2.right_trigger <= TRIGGER_THRESHOLD);
+        if (!shotRequested && shotPhase != ShotPhase.IDLE) {
+            endShot();
+        }
         follower.update();
+
+        if (shotRequested) {
+            if (pickupPhase != PickupPhase.IDLE) {
+                finishFlowerPickup(false);
+            }
+            updateShot();
+        }
+
         if (pickupPhase != PickupPhase.IDLE) {
             if (driverOverride) {
                 finishFlowerPickup(false);
             } else {
                 updateFlowerPickup();
             }
-        } else if (!driverOverride) {
+        } else if (!driverOverride && !shotRequested) {
             if (gamepad1.dpadDownWasPressed()) {
                 beginFlowerPickup(flowerA);
             } else if (gamepad1.dpadLeftWasPressed()) {
@@ -153,7 +222,7 @@ public class teleop_fieldCentric extends OpMode {
             }
         }
 
-        boolean isAutoDrive = pickupPhase != PickupPhase.IDLE;
+        boolean isAutoDrive = pickupPhase != PickupPhase.IDLE || shotRequested;
 
         // Manual field-centric driving
         if (!isAutoDrive) {
@@ -181,7 +250,97 @@ public class teleop_fieldCentric extends OpMode {
         telemetry.addData("Flower Pickup", pickupPhase);
         telemetry.addData("Flower Cycles", flowerCyclesCompleted);
         telemetry.addData("Intake Servo In", is_intake_servo_in);
+        telemetry.addData("Hive alliance", OpModeStorage.alliance);
+        telemetry.addData("Hive shot", shotPhase);
+        if (activeArc != null) {
+            double desiredHeading = activeArc.headingToCenter(robotPose.x(), robotPose.y());
+            double error = wrapAngle(desiredHeading - robotPose.heading());
+            telemetry.addData("Aim goal", activeArc.side);
+            telemetry.addData("Aim heading", "%.1f deg (error %+.1f deg)",
+                    (Math.toDegrees(desiredHeading) + 360) % 360, Math.toDegrees(error));
+        }
         telemetry.update();
+    }
+
+    private void updateShot() {
+        Pose robot = follower.pose();
+        if (shotPhase == ShotPhase.IDLE) {
+            Pose primary = PRIMARY_ARC.closestPose(robot);
+            Pose alternate = ALTERNATE_ARC.closestPose(robot);
+            activeArc = distanceBetween(robot, primary) <= distanceBetween(robot, alternate)
+                    ? PRIMARY_ARC : ALTERNATE_ARC;
+            holdFeederClosed();
+            aimTimer.reset();
+            shotPhase = ShotPhase.ALIGNING;
+        }
+
+        double desiredHeading = activeArc.headingToCenter(robot.x(), robot.y());
+        double error = wrapAngle(desiredHeading - robot.heading());
+        boolean aligned = Math.abs(error) <= SHOT_HEADING_TOLERANCE;
+        boolean deadlineReached = aimTimer.milliseconds() >= SHOT_DEADLINE_MS;
+        if (deadlineReached && (shotPhase == ShotPhase.ALIGNING || shotPhase == ShotPhase.SETTLING)) {
+            openShooter(ShotPhase.SHOOTING_AT_TIMEOUT);
+        }
+
+        double turn = 0;
+        switch (shotPhase) {
+            case ALIGNING:
+                if (aligned) {
+                    shooterTimer.reset();
+                    shotPhase = ShotPhase.SETTLING;
+                } else {
+                    double power = Math.min(MAX_AIM_TURN_POWER,
+                            Math.max(MIN_AIM_TURN_POWER, Math.abs(error) * AIM_TURN_GAIN));
+                    turn = Math.copySign(power, error);
+                }
+                break;
+
+            case SETTLING:
+                if (!aligned) {
+                    shotPhase = ShotPhase.ALIGNING;
+                } else if (shooterTimer.milliseconds() >= SHOT_SETTLE_MS) {
+                    openShooter(ShotPhase.SHOOTING);
+                }
+                break;
+
+            case SHOOTING:
+            case SHOOTING_AT_TIMEOUT:
+                if (shotPhase == ShotPhase.SHOOTING && !aligned && !deadlineReached) {
+                    holdFeederClosed();
+                    shotPhase = ShotPhase.ALIGNING;
+                } else if (shooterTimer.milliseconds() >= SHOOTER_SERVO_DELAY_MS) {
+                    intake_motor.setPower(1);
+                    transfer_motor.setPower(0.75);
+                }
+                break;
+        }
+
+        follower.manual(new DrivePowers(0, 0, turn));
+    }
+
+    private void openShooter(ShotPhase shootingPhase) {
+        shooter_servo.setPosition(shooter_servo_open);
+        shooter_servo2.setPosition(shooter_servo2_open);
+        shooterTimer.reset();
+        shotPhase = shootingPhase;
+    }
+
+    private static double wrapAngle(double angle) {
+        return Math.atan2(Math.sin(angle), Math.cos(angle));
+    }
+
+    private void endShot() {
+        follower.stop();
+        holdFeederClosed();
+        shotPhase = ShotPhase.IDLE;
+        activeArc = null;
+    }
+
+    private void holdFeederClosed() {
+        intake_motor.setPower(0);
+        transfer_motor.setPower(0);
+        shooter_servo.setPosition(shooter_servo_closed);
+        shooter_servo2.setPosition(shooter_servo2_closed);
     }
 
     private void beginFlowerPickup(Pose approach) {
@@ -284,67 +443,33 @@ public class teleop_fieldCentric extends OpMode {
         if (pickupPhase != PickupPhase.IDLE) {
             finishFlowerPickup(false);
         }
+        if (shotPhase != ShotPhase.IDLE) {
+            endShot();
+        }
+        holdFeederClosed();
+        flywheel_motor.setPower(0);
     }
 
     private void updateManualIntake() {
-        if (gamepad2.right_trigger > 0.1 && gamepad2.left_trigger < 0.1) {
-            shooter_servo.setPosition(shooter_servo_closed);
-            shooter_servo2.setPosition(shooter_servo2_closed);
-            intake_motor.setPower(1);
-            transfer_motor.setPower(.5);
-            shooterTimer.reset();
-        }
+        shooter_servo.setPosition(shooter_servo_closed);
+        shooter_servo2.setPosition(shooter_servo2_closed);
 
-
-        if(gamepad2.left_trigger > 0.1 && gamepad2.right_trigger < 0.1)
-        {
-           shooter_servo.setPosition(shooter_servo_open);
-           shooter_servo2.setPosition(shooter_servo2_open);
-           if(shooterTimer.milliseconds()>150) {
-               transfer_motor.setPower(.75);
-               intake_motor.setPower(1);
-           }
-        }
-
-        if(gamepad2.left_trigger < 0.1 && gamepad2.right_trigger < 0.1)
-        {
+        if (gamepad2.right_trigger > TRIGGER_THRESHOLD) {
+            if (gamepad2.left_trigger > TRIGGER_THRESHOLD) {
+                intake_motor.setPower(gamepad2.a ? -1 : -0.5);
+                transfer_motor.setPower(gamepad2.a ? -1 : -0.45);
+            } else {
+                intake_motor.setPower(1);
+                transfer_motor.setPower(0.5);
+            }
+        } else {
             intake_motor.setPower(0);
             transfer_motor.setPower(0);
-            shooter_servo.setPosition(shooter_servo_closed);
-            shooter_servo2.setPosition(shooter_servo2_closed);
-            shooterTimer.reset();
         }
 
-        if(gamepad2.left_trigger > 0.1 && gamepad2.right_trigger > 0.1)
-        {
-            if(gamepad2.a)
-            {
-                intake_motor.setPower(-1);
-                transfer_motor.setPower(-1);
-            }
-            else {
-                intake_motor.setPower(-.5);
-                transfer_motor.setPower(-.45);
-            }
-            shooter_servo.setPosition(shooter_servo_closed);
-            shooter_servo2.setPosition(shooter_servo2_closed);
-            shooterTimer.reset();
-        }
-
-
-
-        // Intake servo toggle (no oscillation)
         if (gamepad2.yWasPressed()) {
-
             is_intake_servo_in = !is_intake_servo_in;
-
-            if (is_intake_servo_in) {
-                intake_servo.setPosition(intake_servo_in);
-            } else {
-                intake_servo.setPosition(intake_servo_out);
-            }
+            intake_servo.setPosition(is_intake_servo_in ? intake_servo_in : intake_servo_out);
         }
-
-
     }
 }

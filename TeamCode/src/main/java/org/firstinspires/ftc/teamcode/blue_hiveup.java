@@ -13,29 +13,24 @@ import com.qualcomm.hardware.limelightvision.LLResultTypes;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
-
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.Servo;
 
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
+import org.firstinspires.ftc.robotcore.external.navigation.Position;
 import org.firstinspires.ftc.teamcode.pedro.Constants;
 
 import java.util.List;
 
 @Autonomous(name = "Blue - Hive Up")
 public class blue_hiveup extends OpMode {
-
-    // =========================================
-    // LIMELIGHT CONSTANTS
-    // =========================================
-
-    private static final int APRILTAG_PIPELINE = 1;
+    private static final int APRILTAG_PIPELINE = OpModeStorage.Alliance.BLUE.aprilTagPipeline;
     private static final long MAX_RESULT_AGE_MS = 200;
-    private static final double TAG_WAIT_MS = 500;
-
-    // =========================================
-    // FLYWHEEL CONSTANTS
-    // =========================================
+    private static final double AUTONOMOUS_LENGTH_MS = 30_000;
+    private static final double TAG_WAIT_RESERVE_MS = 6_000;
+    private static final double PARK_RESERVE_MS = 3_000;
 
     private static final double FLYWHEEL_VELOCITY = 1620;
 
@@ -48,63 +43,43 @@ public class blue_hiveup extends OpMode {
     private static final double VELOCITY_TOLERANCE = 20;
     private static final double VELOCITY_STABLE_MS = 200;
 
-    // =========================================
-    // SHOOTING CONSTANTS
-    // =========================================
-
     private static final double SHOOT_DURATION_MS = 1500;
     private static final double SHOOT_SERVO_DELAY_MS = 150;
-
-    // =========================================
-    // INTAKE CONSTANTS
-    // =========================================
 
     private static final double INTAKE_POWER = 1.0;
     private static final double TRANSFER_PICKUP_POWER = 0.5;
     private static final double TRANSFER_SHOOT_POWER = 0.60;
 
-    // =========================================
-    // DRIVING SPEED CONSTANTS
-    // =========================================
-
     private static final double APPROACH_SPEED = 30.0;
-    private static final double SLOW_PICKUP_SPEED = 15.0;
-
-    // NEW: Final corner pickup speed
-    private static final double FINAL_CORNER_SPEED = 15.0;
-
+    private static final double CORNER_PICKUP_SPEED = 15.0;
     private static final double PICKUP_DWELL_MS = 500;
-
-    // =========================================
-    // AUTONOMOUS TIMEOUT CONSTANTS
-    // =========================================
 
     private static final double ROTATE_TIMEOUT_MS = 3000;
     private static final double APPROACH_TIMEOUT_MS = 4000;
-    private static final double PICKUP_TIMEOUT_MS = 3000;
-
-    // NEW: Final corner movement timeout
-    private static final double FINAL_CORNER_TIMEOUT_MS = 2000;
-
-    private static final double RETURN_TIMEOUT_MS = 4000;
-    private static final double STRAFE_TIMEOUT_MS = 3000;
+    private static final double CORNER_PICKUP_TIMEOUT_MS = 4000;
+    private static final double RETURN_TIMEOUT_MS = 5000;
     private static final double PARK_TIMEOUT_MS = 8000;
 
-    // =========================================
-    // SERVO POSITIONS
-    // =========================================
+    private static final int FLOWER_PICKUP_CYCLES = 4;
+
+    private static final double FLOWER_APPROACH_SPEED = 30.0;
+    private static final double FLOWER_SWEEP_SPEED = 15.0;
+    private static final double FLOWER_EXIT_SPEED = 20.0;
+
+    private static final double FLOWER_APPROACH_TIMEOUT_MS = 5000;
+    private static final double FLOWER_SWEEP_TIMEOUT_MS = 2000;
+    private static final double FLOWER_EXIT_TIMEOUT_MS = 2000;
+    private static final double FLOWER_PICKUP_BUDGET_MS =
+            FLOWER_APPROACH_TIMEOUT_MS + FLOWER_SWEEP_TIMEOUT_MS + FLOWER_EXIT_TIMEOUT_MS;
 
     private static final double INTAKE_SERVO_IN = 0.18;
+    private static final double INTAKE_SERVO_OUT = 0.69;
 
     private static final double SHOOTER_SERVO_CLOSED = 0.88;
     private static final double SHOOTER_SERVO_OPEN = 0.5;
 
     private static final double SHOOTER_SERVO2_CLOSED = 0.5;
     private static final double SHOOTER_SERVO2_OPEN = 0.88;
-
-    // =========================================
-    // FIELD POSES
-    // =========================================
 
     private final Pose shootPose =
             new Pose(56, 7.75, Math.toRadians(270));
@@ -115,25 +90,35 @@ public class blue_hiveup extends OpMode {
     private final Pose pickupApproachPose =
             new Pose(24, 7.75, Math.toRadians(185));
 
-    private final Pose pickupPose =
-            new Pose(12, 7.75, Math.toRadians(180));
-
-    // NEW:
-    // Move another 2 inches into the corner
-    // while rotating back to 180 degrees.
-
     private final Pose finalCornerPose =
-            new Pose(3, 7.75, Math.toRadians(180));
+            new Pose(8, 7.75, Math.toRadians(185));
 
-    private final Pose strafePose =
-            new Pose(32, 24, Math.toRadians(270));
+    private final Pose returnControlPose =
+            new Pose(28, 11.75, Math.toRadians(270));
+
+    private final Pose flowerStartPose =
+            new Pose(19, 47, Math.toRadians(180));
+
+    private final Pose flowerInPose =
+            new Pose(12.75, 47, Math.toRadians(180));
+
+    private final Pose flowerOutPose =
+            new Pose(19, 47, Math.toRadians(180));
+
+    private final Pose flowerExitPose =
+            new Pose(22, 47, Math.toRadians(180));
+
+    private static final double HIVE_CLEARANCE_TOLERANCE = 2.0;
+
+    private final Pose hiveClearancePose =
+            new Pose(24, 24, Math.toRadians(270));
 
     private final Pose parkPose =
             new Pose(12, 93, Math.toRadians(270));
 
-    // =========================================
-    // HARDWARE
-    // =========================================
+    // Allow travel beyond the clearance line if the follower settles short of it.
+    private final Pose flowerClearanceRecoveryPose =
+            new Pose(flowerExitPose.x() + 1, flowerExitPose.y(), flowerExitPose.heading());
 
     private Follower follower;
     private Limelight3A limelight;
@@ -146,67 +131,38 @@ public class blue_hiveup extends OpMode {
     private Servo shooter_servo;
     private Servo shooter_servo2;
 
-    // =========================================
-    // TIMERS
-    // =========================================
+    // TIMERS AND TRACKING
 
     private final Timer stateTimer = new Timer();
     private final Timer velocityTimer = new Timer();
 
     private boolean velocityStableTracking = false;
 
-    // =========================================
-    // LIMELIGHT TRACKING
-    // =========================================
-
-    private boolean secondTagSeen = false;
-
     private int secondTagId = -1;
-
-    private long arrivalFrameTimestamp = -1;
-
-    private String secondShotStatus = "Not checked";
-
-    // =========================================
-    // TIMEOUT TRACKING
-    // =========================================
-
-    private int timeoutCount = 0;
+    private int flowerCyclesCompleted;
+    private int timeoutCount;
     private String lastTimeout = "None";
 
-    // =========================================
-    // AUTONOMOUS STATES
-    // =========================================
-
     private enum AutoState {
-
         WAIT_FIRST_FLYWHEEL,
         SHOOT_FIRST,
-
         ROTATE_TO_PICKUP,
         DRIVE_TO_PICKUP,
-        SLOW_PICKUP,
-
-        // NEW STATE
-        FINAL_CORNER_PICKUP,
-
+        CORNER_PICKUP,
         FINISH_PICKUP,
-
         RETURN_TO_SHOOT,
         WAIT_SECOND_FLYWHEEL,
         SHOOT_SECOND,
-
-        STRAFE_LEFT,
+        DRIVE_TO_FLOWER,
+        FLOWER_SWEEP_IN,
+        FLOWER_SWEEP_OUT,
+        FLOWER_EXIT,
+        PARK_CLEAR_HIVE,
         PARK,
         DONE
     }
 
-    private AutoState state =
-            AutoState.WAIT_FIRST_FLYWHEEL;
-
-    // =========================================
-    // INITIALIZATION
-    // =========================================
+    private AutoState state = AutoState.WAIT_FIRST_FLYWHEEL;
 
     @Override
     public void init() {
@@ -229,10 +185,6 @@ public class blue_hiveup extends OpMode {
         shooter_servo2 = hardwareMap.get(
                 Servo.class, "shooter_servo2");
 
-        // =====================================
-        // MOTOR INITIALIZATION
-        // =====================================
-
         intake_motor.setMode(
                 DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
@@ -253,118 +205,104 @@ public class blue_hiveup extends OpMode {
         transfer_motor.setPower(0);
         flywheel_motor.setPower(0);
 
-        // =====================================
-        // SERVO INITIALIZATION
-        // =====================================
-
         intake_servo.setPosition(INTAKE_SERVO_IN);
-
         closeShooter();
 
-        // =====================================
-        // PEDRO PATHING INITIALIZATION
-        // =====================================
-
         follower = Constants.create(hardwareMap);
-
         follower.setPose(shootPose);
-
-        // =====================================
-        // LIMELIGHT INITIALIZATION
-        // =====================================
 
         limelight = hardwareMap.get(
                 Limelight3A.class, "limelight");
 
         limelight.setPollRateHz(100);
-
         limelight.pipelineSwitch(APRILTAG_PIPELINE);
-
         limelight.start();
 
         telemetry.addData("Status", "Initialized");
-
-        telemetry.addData(
-                "Limelight Connected",
-                limelight.isConnected());
-
-        telemetry.addData(
-                "Limelight Pipeline",
-                APRILTAG_PIPELINE);
-
-        telemetry.addData(
-                "AprilTag Detection", "Any ID");
-
+        telemetry.addData("Intake", "UP / STORED");
         telemetry.addData("Start X", shootPose.x());
         telemetry.addData("Start Y", shootPose.y());
-        telemetry.addData("Start Heading", 270);
-
         telemetry.update();
     }
 
-    // =========================================
-    // START
-    // =========================================
+    @Override
+    public void init_loop() {
+        telemetry.addData("Configured field start (in)", "X %.2f, Y %.2f",
+                shootPose.x(), shootPose.y());
+
+        LLResult result = limelight.getLatestResult();
+        if (result == null || !result.isValid()
+                || result.getStaleness() > MAX_RESULT_AGE_MS) {
+            telemetry.addData("Limelight", "Waiting for a fresh AprilTag frame");
+        } else {
+            List<LLResultTypes.FiducialResult> tags = result.getFiducialResults();
+            boolean poseShown = false;
+            if (tags != null) {
+                for (LLResultTypes.FiducialResult tag : tags) {
+                    Pose3D pose = tag.getRobotPoseTargetSpace();
+                    if (pose == null) {
+                        continue;
+                    }
+
+                    Position offset = pose.getPosition().toUnit(DistanceUnit.INCH);
+                    // For a vertical tag, target-space X and Z are the floor-plane axes.
+                    telemetry.addData("Robot from tag " + tag.getFiducialId() + " (in)",
+                            "X (sideways) %+.2f, Y (out from tag) %+.2f", offset.x, offset.z);
+                    poseShown = true;
+                }
+            }
+            if (!poseShown) {
+                telemetry.addData("Limelight", "No AprilTag pose available");
+            }
+        }
+        telemetry.update();
+    }
 
     @Override
     public void start() {
-
-        OpModeStorage.autonomousEndPose = null;
-
+        OpModeStorage.beginAutonomous(OpModeStorage.Alliance.BLUE);
         timeoutCount = 0;
         lastTimeout = "None";
-
-        secondTagSeen = false;
         secondTagId = -1;
-        arrivalFrameTimestamp = -1;
-        secondShotStatus = "Not checked";
+        flowerCyclesCompleted = 0;
+        resetRuntime();
 
-        // Start flywheel immediately
+        intake_servo.setPosition(INTAKE_SERVO_IN);
+        closeShooter();
+        stopFeeding();
         flywheel_motor.setVelocity(FLYWHEEL_VELOCITY);
-
         setState(AutoState.WAIT_FIRST_FLYWHEEL);
     }
 
-    // =========================================
-    // MAIN LOOP
-    // =========================================
-
     @Override
     public void loop() {
-
-        // Update Pedro Pathing once per loop
         follower.update();
 
-        // =====================================
-        // FLYWHEEL CONTROL
-        // =====================================
+        double remainingMs = remainingAutoMs();
+        if (remainingMs <= PARK_RESERVE_MS
+                && state != AutoState.PARK_CLEAR_HIVE
+                && state != AutoState.PARK && state != AutoState.DONE) {
+            if (isFlowerState() && !flowerIsClear()) {
+                if (state != AutoState.FLOWER_EXIT) {
+                    beginFlowerExit();
+                }
+            } else {
+                beginPark();
+            }
+        }
 
-        // Maintain flywheel velocity until second
-        // shooting is completed or skipped.
-
-        if (isFlywheelEnabled()) {
-
-            flywheel_motor.setVelocity(
-                    FLYWHEEL_VELOCITY);
-
-        } else {
-
+        if (isFlowerState() || state == AutoState.PARK_CLEAR_HIVE
+                || state == AutoState.PARK || state == AutoState.DONE) {
             flywheel_motor.setPower(0);
+        } else {
+            flywheel_motor.setVelocity(FLYWHEEL_VELOCITY);
         }
 
         switch (state) {
-
-            // =================================
-            // FIRST FLYWHEEL SPINUP
-            // =================================
-
             case WAIT_FIRST_FLYWHEEL:
 
                 stopFeeding();
                 closeShooter();
-
-                // First shooting does not
-                // require AprilTag detection.
 
                 if (flywheelReady()) {
 
@@ -374,15 +312,9 @@ public class blue_hiveup extends OpMode {
                         >= FLYWHEEL_WAIT_MS) {
 
                     recordTimeout();
-
                     beginShooting(AutoState.SHOOT_FIRST);
                 }
-
                 break;
-
-            // =================================
-            // FIRST SHOOTING SEQUENCE
-            // =================================
 
             case SHOOT_FIRST:
 
@@ -394,18 +326,10 @@ public class blue_hiveup extends OpMode {
                     stopFeeding();
                     closeShooter();
 
-                    // Keep flywheel running.
-
                     follower.hold(rotatePose);
-
                     setState(AutoState.ROTATE_TO_PICKUP);
                 }
-
                 break;
-
-            // =================================
-            // ROTATE TO 180 DEGREES
-            // =================================
 
             case ROTATE_TO_PICKUP:
 
@@ -431,37 +355,20 @@ public class blue_hiveup extends OpMode {
                 if (rotationComplete || rotationTimedOut) {
 
                     if (rotationTimedOut && !rotationComplete) {
-
                         recordTimeout();
                         follower.stop();
                     }
 
                     startIntake();
 
-                    Pose startPose = follower.pose();
-
-                    Path approach =
-                            line(startPose, pickupApproachPose)
-                                    .linear(
-                                            startPose,
-                                            pickupApproachPose
-                                    )
-                                    .with(
-                                            Constants.foresightConfig
-                                                    .maxVelocityConstraint
-                                                    .at(APPROACH_SPEED)
-                                    );
-
-                    follower.follow(approach);
+                    followLine(
+                            pickupApproachPose,
+                            APPROACH_SPEED
+                    );
 
                     setState(AutoState.DRIVE_TO_PICKUP);
                 }
-
                 break;
-
-            // =================================
-            // DRIVE TOWARD CORNER
-            // =================================
 
             case DRIVE_TO_PICKUP:
 
@@ -470,99 +377,27 @@ public class blue_hiveup extends OpMode {
                 if (pathFinishedOrTimedOut(
                         APPROACH_TIMEOUT_MS)) {
 
-                    Pose startPose = follower.pose();
-
-                    Path slowApproach =
-                            line(startPose, pickupPose)
-                                    .linear(
-                                            startPose,
-                                            pickupPose
-                                    )
-                                    .with(
-                                            Constants.foresightConfig
-                                                    .maxVelocityConstraint
-                                                    .at(SLOW_PICKUP_SPEED)
-                                    );
-
-                    follower.follow(slowApproach);
-
-                    setState(AutoState.SLOW_PICKUP);
-                }
-
-                break;
-
-            // =================================
-            // SLOW CORNER PICKUP
-            // =================================
-
-            case SLOW_PICKUP:
-
-                startIntake();
-
-                if (pathFinishedOrTimedOut(
-                        PICKUP_TIMEOUT_MS)) {
-
-                    // NEW:
-                    // After reaching pickupPose,
-                    // move farther into the corner.
-                    //
-                    // X: 5 -> 3
-                    // Y: 6 -> 6
-                    // Heading: 235 -> 180 degrees
-
-                    Pose startPose = follower.pose();
-
-                    Path finalCornerPath =
-                            line(startPose, finalCornerPose)
-                                    .linear(
-                                            startPose,
-                                            finalCornerPose
-                                    )
-                                    .with(
-                                            Constants.foresightConfig
-                                                    .maxVelocityConstraint
-                                                    .at(FINAL_CORNER_SPEED)
-                                    );
-
-                    follower.follow(finalCornerPath);
-
-                    setState(
-                            AutoState.FINAL_CORNER_PICKUP
+                    followLine(
+                            finalCornerPose,
+                            CORNER_PICKUP_SPEED
                     );
-                }
 
+                    setState(AutoState.CORNER_PICKUP);
+                }
                 break;
 
-            // =================================
-            // NEW: FINAL CORNER PICKUP
-            // =================================
-
-            case FINAL_CORNER_PICKUP:
-
-                // Keep intake and transfer running
-                // while moving and rotating.
+            case CORNER_PICKUP:
 
                 startIntake();
 
                 if (pathFinishedOrTimedOut(
-                        FINAL_CORNER_TIMEOUT_MS)) {
-
-                    // Begin pickup dwell after
-                    // final corner movement.
+                        CORNER_PICKUP_TIMEOUT_MS)) {
 
                     setState(AutoState.FINISH_PICKUP);
                 }
-
                 break;
 
-            // =================================
-            // FINISH PICKUP
-            // =================================
-
             case FINISH_PICKUP:
-
-                // Continue collecting balls
-                // for the pickup dwell period.
 
                 startIntake();
 
@@ -571,485 +406,318 @@ public class blue_hiveup extends OpMode {
 
                     stopFeeding();
 
-                    Pose startPose = follower.pose();
+                    Pose current = follower.pose();
 
                     Path returnPath =
-                            line(startPose, shootPose)
-                                    .linear(
-                                            startPose,
-                                            shootPose
-                                    );
+                            curve(
+                                    current,
+                                    returnControlPose,
+                                    shootPose
+                            ).linear(
+                                    current,
+                                    shootPose
+                            );
 
                     follower.follow(returnPath);
 
                     setState(AutoState.RETURN_TO_SHOOT);
                 }
-
                 break;
-
-            // =================================
-            // RETURN TO SHOOTING POSITION
-            // =================================
 
             case RETURN_TO_SHOOT:
-
                 stopFeeding();
                 closeShooter();
 
-                if (pathFinishedOrTimedOut(
-                        RETURN_TIMEOUT_MS)) {
-
-                    // Reset AprilTag detection.
-
-                    secondTagSeen = false;
-                    secondTagId = -1;
-
-                    secondShotStatus =
-                            "Searching for AprilTag";
-
-                    // Capture camera timestamp at arrival.
-
-                    LLResult arrivalResult =
-                            limelight.getLatestResult();
-
-                    arrivalFrameTimestamp =
-                            arrivalResult != null
-                                    ? arrivalResult.getControlHubTimeStamp()
-                                    : -1;
-
-                    setState(
-                            AutoState.WAIT_SECOND_FLYWHEEL
-                    );
+                if (pathFinishedOrTimedOut(RETURN_TIMEOUT_MS)) {
+                    // Retain the readiness measured during the return drive.
+                    state = AutoState.WAIT_SECOND_FLYWHEEL;
+                    stateTimer.reset();
+                    checkForSecondShot(remainingMs);
+                } else {
+                    flywheelReady();
                 }
-
                 break;
-
-            // =================================
-            // SECOND SHOOTING READINESS
-            // REQUIRE APRILTAG DETECTION
-            // =================================
 
             case WAIT_SECOND_FLYWHEEL:
-
-                stopFeeding();
-                closeShooter();
-
-                if (!secondTagSeen
-                        && secondAprilTagVisible()) {
-
-                    secondTagSeen = true;
-
-                    secondShotStatus = "AprilTag detected";
-                }
-
-                boolean secondFlywheelReady =
-                        flywheelReady();
-
-                if (!secondTagSeen) {
-
-                    // Skip shooting if no AprilTag
-                    // is detected within TAG_WAIT_MS.
-
-                    if (stateTimer.milliseconds()
-                            >= TAG_WAIT_MS) {
-
-                        secondShotStatus =
-                                "Skipped - no AprilTag";
-
-                        // Shut off flywheel and move
-                        // directly toward parking.
-
-                        beginStrafe();
-                    }
-
-                } else if (secondFlywheelReady) {
-
-                    secondShotStatus =
-                            "Shooting - AprilTag detected";
-
-                    beginShooting(AutoState.SHOOT_SECOND);
-
-                } else if (stateTimer.milliseconds()
-                        >= FLYWHEEL_WAIT_MS) {
-
-                    // Preserve flywheel timeout behavior,
-                    // but only when AprilTag was detected.
-
-                    recordTimeout();
-
-                    secondShotStatus =
-                            "Shooting - flywheel timeout";
-
-                    beginShooting(AutoState.SHOOT_SECOND);
-                }
-
+                checkForSecondShot(remainingMs);
                 break;
-
-            // =================================
-            // SECOND SHOOTING SEQUENCE
-            // =================================
 
             case SHOOT_SECOND:
-
                 runShooting();
-
-                if (stateTimer.milliseconds()
-                        >= SHOOT_DURATION_MS) {
-
-                    secondShotStatus =
-                            "Second shot completed";
-
-                    // Stop feeding, close shooter,
-                    // shut off flywheel and strafe.
-
-                    beginStrafe();
+                if (stateTimer.milliseconds() >= SHOOT_DURATION_MS) {
+                    if (remainingMs >= FLOWER_PICKUP_BUDGET_MS + PARK_RESERVE_MS) {
+                        beginFlowerApproach();
+                    } else {
+                        beginPark();
+                    }
                 }
-
                 break;
 
-            // =================================
-            // STRAFE NEGATIVE X
-            // =================================
+            case DRIVE_TO_FLOWER:
+                if (!hasTimeForFlowerSweep(remainingMs)) {
+                    beginFlowerExit();
+                } else if (!follower.isBusy()) {
+                    beginFlowerSweepIn();
+                } else if (stateTimer.milliseconds() >= FLOWER_APPROACH_TIMEOUT_MS) {
+                    recordTimeout();
+                    beginFlowerExit();
+                }
+                break;
 
-            case STRAFE_LEFT:
+            case FLOWER_SWEEP_IN:
+                if (remainingMs <= PARK_RESERVE_MS + FLOWER_EXIT_TIMEOUT_MS) {
+                    beginFlowerExit();
+                } else if (!follower.isBusy()) {
+                    beginFlowerSweepOut();
+                } else if (stateTimer.milliseconds() >= FLOWER_SWEEP_TIMEOUT_MS) {
+                    recordTimeout();
+                    beginFlowerExit();
+                }
+                break;
 
-                // Flywheel remains OFF.
+            case FLOWER_SWEEP_OUT:
+                if (!follower.isBusy()) {
+                    flowerCyclesCompleted++;
+                    if (flowerCyclesCompleted < FLOWER_PICKUP_CYCLES
+                            && hasTimeForFlowerSweep(remainingMs)) {
+                        beginFlowerSweepIn();
+                    } else {
+                        beginFlowerExit();
+                    }
+                } else if (remainingMs <= PARK_RESERVE_MS + FLOWER_EXIT_TIMEOUT_MS) {
+                    beginFlowerExit();
+                } else if (stateTimer.milliseconds() >= FLOWER_SWEEP_TIMEOUT_MS) {
+                    recordTimeout();
+                    beginFlowerExit();
+                }
+                break;
 
-                if (pathFinishedOrTimedOut(
-                        STRAFE_TIMEOUT_MS)) {
+            case FLOWER_EXIT:
+                if (flowerIsClear()) {
+                    beginPark();
+                } else if (pathFinishedOrTimedOut(FLOWER_EXIT_TIMEOUT_MS)) {
+                    followLine(flowerClearanceRecoveryPose, FLOWER_EXIT_SPEED);
+                    setState(AutoState.FLOWER_EXIT);
+                }
+                break;
 
-                    Pose startPose = follower.pose();
-
-                    Path parkingPath =
-                            line(startPose, parkPose)
-                                    .linear(
-                                            startPose,
-                                            parkPose
-                                    );
-
-                    follower.follow(parkingPath);
-
+            case PARK_CLEAR_HIVE:
+                Pose current = follower.pose();
+                if (!follower.isBusy()
+                        && Math.hypot(current.x() - hiveClearancePose.x(),
+                                current.y() - hiveClearancePose.y()) <= HIVE_CLEARANCE_TOLERANCE) {
+                    // Keep the park leg on the clear side of Flower A.
+                    Pose control = new Pose(36, flowerExitPose.y(), parkPose.heading());
+                    follower.follow(curve(current, control, parkPose).linear(current, parkPose));
                     setState(AutoState.PARK);
+                } else if (stateTimer.milliseconds() >= PARK_TIMEOUT_MS) {
+                    recordTimeout();
+                    follower.stop();
+                    setState(AutoState.DONE);
+                } else if (!follower.isBusy()) {
+                    follower.follow(line(current, hiveClearancePose).linear(current, hiveClearancePose));
                 }
-
                 break;
-
-            // =================================
-            // PARK
-            // =================================
 
             case PARK:
-
-                // Flywheel remains OFF.
-
-                if (pathFinishedOrTimedOut(
-                        PARK_TIMEOUT_MS)) {
-
-                    stopFeeding();
-                    closeShooter();
-
-                    flywheel_motor.setPower(0);
-
+                if (pathFinishedOrTimedOut(PARK_TIMEOUT_MS)) {
                     setState(AutoState.DONE);
                 }
-
                 break;
-
-            // =================================
-            // DONE
-            // =================================
 
             case DONE:
-
-                flywheel_motor.setPower(0);
-
-                stopFeeding();
-
                 break;
         }
 
-        // =====================================
-        // TELEMETRY
-        // =====================================
-
-        Pose robotPose = follower.pose();
-
+        Pose pose = follower.pose();
         telemetry.addData("Auto State", state);
-
-        telemetry.addData("Robot X", robotPose.x());
-        telemetry.addData("Robot Y", robotPose.y());
-
-        telemetry.addData(
-                "Robot Heading",
-                Math.toDegrees(robotPose.heading())
-        );
-
-        // =====================================
-        // FINAL CORNER TELEMETRY
-        // =====================================
-
-        if (state == AutoState.FINAL_CORNER_PICKUP) {
-
-            telemetry.addData(
-                    "Final Corner Target X",
-                    finalCornerPose.x()
-            );
-
-            telemetry.addData(
-                    "Final Corner Target Y",
-                    finalCornerPose.y()
-            );
-
-            telemetry.addData(
-                    "Final Corner Target Heading",
-                    Math.toDegrees(finalCornerPose.heading())
-            );
-
-            telemetry.addData(
-                    "Final Corner Speed",
-                    FINAL_CORNER_SPEED
-            );
-        }
-
-        // =====================================
-        // FLYWHEEL TELEMETRY
-        // =====================================
-
-        boolean flywheelEnabled = isFlywheelEnabled();
-
-        double flywheelTarget =
-                flywheelEnabled ? FLYWHEEL_VELOCITY : 0;
-
-        double flywheelActual =
-                flywheel_motor.getVelocity();
-
-        telemetry.addData(
-                "Flywheel Enabled",
-                flywheelEnabled
-        );
-
-        telemetry.addData(
-                "Flywheel Target",
-                flywheelTarget
-        );
-
-        telemetry.addData(
-                "Flywheel Actual",
-                flywheelActual
-        );
-
-        telemetry.addData(
-                "Flywheel Error",
-                flywheelTarget - flywheelActual
-        );
-
-        telemetry.addData(
-                "State Time (ms)",
-                stateTimer.milliseconds()
-        );
-
-        // =====================================
-        // PEDRO PATHING TELEMETRY
-        // =====================================
-
-        telemetry.addData(
-                "Follower Busy",
-                follower.isBusy()
-        );
-
-        telemetry.addData(
-                "Follower Mode",
-                follower.mode()
-        );
-
-        // =====================================
-        // LIMELIGHT TELEMETRY
-        // =====================================
-
-        telemetry.addData(
-                "Limelight Connected",
-                limelight.isConnected()
-        );
-
-        telemetry.addData(
-                "Limelight Running",
-                limelight.isRunning()
-        );
-
-        telemetry.addData(
-                "Limelight Pipeline",
-                APRILTAG_PIPELINE
-        );
-
-        telemetry.addData(
-                "Second AprilTag Seen",
-                secondTagSeen
-        );
-
-        telemetry.addData(
-                "Second AprilTag ID",
-                secondTagId
-        );
-
-        telemetry.addData(
-                "Second Shot",
-                secondShotStatus
-        );
-
-        if (state == AutoState.WAIT_SECOND_FLYWHEEL
-                && !secondTagSeen) {
-
-            telemetry.addData(
-                    "AprilTag Wait Remaining (ms)",
-                    Math.max(
-                            0,
-                            TAG_WAIT_MS
-                                    - stateTimer.milliseconds()
-                    )
-            );
-        }
-
-        // =====================================
-        // TIMEOUT TELEMETRY
-        // =====================================
-
-        telemetry.addData(
-                "Timeout Count",
-                timeoutCount
-        );
-
-        telemetry.addData(
-                "Last Timeout",
-                lastTimeout
-        );
-
+        telemetry.addData("Time remaining (s)", "%.2f", remainingMs / 1000.0);
+        telemetry.addData("Robot pose", "X %.2f, Y %.2f, heading %.1f",
+                pose.x(), pose.y(), Math.toDegrees(pose.heading()));
+        telemetry.addData("Primary AprilTag ID", secondTagId);
+        telemetry.addData("Flywheel velocity", flywheel_motor.getVelocity());
+        telemetry.addData("Flower A cycles", "%d / %d", flowerCyclesCompleted, FLOWER_PICKUP_CYCLES);
+        telemetry.addData("Timeouts", timeoutCount);
+        telemetry.addData("Last timeout", lastTimeout);
         telemetry.update();
     }
 
-    // =========================================
-    // FLYWHEEL ENABLE CHECK
-    // =========================================
+    private void checkForSecondShot(double remainingMs) {
+        if (secondTagId < 0) {
+            if (remainingMs <= TAG_WAIT_RESERVE_MS) {
+                beginPark();
+                return;
+            }
+            secondTagId = visibleAprilTagId();
+        }
 
-    private boolean isFlywheelEnabled() {
-
-        return state != AutoState.STRAFE_LEFT
-                && state != AutoState.PARK
-                && state != AutoState.DONE;
+        boolean ready = flywheelReady();
+        if (secondTagId < 0) {
+            return;
+        }
+        if (ready) {
+            beginShooting(AutoState.SHOOT_SECOND);
+        } else if (stateTimer.milliseconds() >= FLYWHEEL_WAIT_MS
+                || remainingMs <= PARK_RESERVE_MS + SHOOT_DURATION_MS + SHOOT_SERVO_DELAY_MS) {
+            recordTimeout();
+            beginShooting(AutoState.SHOOT_SECOND);
+        }
     }
 
-    // =========================================
-    // APRILTAG DETECTION
-    // =========================================
-
-    private boolean secondAprilTagVisible() {
-
+    private int visibleAprilTagId() {
         if (!limelight.isConnected()) {
-
-            return false;
+            return -1;
         }
-
         LLResult result = limelight.getLatestResult();
-
-        if (result == null || !result.isValid()) {
-
-            return false;
+        if (result == null || !result.isValid()
+                || result.getPipelineIndex() != APRILTAG_PIPELINE
+                || result.getStaleness() > MAX_RESULT_AGE_MS) {
+            return -1;
         }
-
-        if (result.getPipelineIndex()
-                != APRILTAG_PIPELINE) {
-
-            return false;
-        }
-
-        if (result.getStaleness()
-                > MAX_RESULT_AGE_MS) {
-
-            return false;
-        }
-
-        // Reject camera results received
-        // before returning to shooting position.
-
-        if (result.getControlHubTimeStamp()
-                <= arrivalFrameTimestamp) {
-
-            return false;
-        }
-
-        List<LLResultTypes.FiducialResult> tags =
-                result.getFiducialResults();
-
-        if (tags == null || tags.isEmpty()) {
-
-            return false;
-        }
-
-        // Accept any AprilTag ID.
-
-        secondTagId = tags.get(0).getFiducialId();
-
-        return true;
+        List<LLResultTypes.FiducialResult> tags = result.getFiducialResults();
+        return tags == null || tags.isEmpty() ? -1 : tags.get(0).getFiducialId();
     }
 
-    // =========================================
-    // BEGIN STRAFE
-    // =========================================
+    private boolean hasTimeForFlowerSweep(double remainingMs) {
+        return remainingMs > PARK_RESERVE_MS + FLOWER_EXIT_TIMEOUT_MS + FLOWER_SWEEP_TIMEOUT_MS;
+    }
 
-    // Called after successful second shooting
-    // OR when second shooting is skipped.
+    private boolean isFlowerState() {
+        return state == AutoState.DRIVE_TO_FLOWER
+                || state == AutoState.FLOWER_SWEEP_IN
+                || state == AutoState.FLOWER_SWEEP_OUT
+                || state == AutoState.FLOWER_EXIT;
+    }
 
-    private void beginStrafe() {
+    private boolean flowerIsClear() {
+        return follower.pose().x() >= flowerExitPose.x();
+    }
+
+    private void beginFlowerApproach() {
 
         stopFeeding();
-
         closeShooter();
-
-        // Turn off flywheel before moving.
         flywheel_motor.setPower(0);
 
-        Pose startPose = follower.pose();
+        intake_servo.setPosition(INTAKE_SERVO_OUT);
+        flowerCyclesCompleted = 0;
 
-        Path strafePath =
-                line(startPose, strafePose)
-                        .linear(
-                                startPose,
-                                strafePose
-                        );
+        followLine(
+                flowerStartPose,
+                FLOWER_APPROACH_SPEED
+        );
 
-        follower.follow(strafePath);
-
-        setState(AutoState.STRAFE_LEFT);
+        setState(AutoState.DRIVE_TO_FLOWER);
     }
 
-    // =========================================
-    // STATE MANAGEMENT
-    // =========================================
+    private void beginFlowerSweepIn() {
+
+        intake_servo.setPosition(INTAKE_SERVO_OUT);
+
+        startIntake();
+        closeShooter();
+
+        followLine(
+                flowerInPose,
+                FLOWER_SWEEP_SPEED
+        );
+
+        setState(AutoState.FLOWER_SWEEP_IN);
+    }
+
+    private void beginFlowerSweepOut() {
+
+        intake_servo.setPosition(INTAKE_SERVO_OUT);
+
+        startIntake();
+        closeShooter();
+
+        followLine(
+                flowerOutPose,
+                FLOWER_SWEEP_SPEED
+        );
+
+        setState(AutoState.FLOWER_SWEEP_OUT);
+    }
+
+    private void beginFlowerExit() {
+
+        intake_servo.setPosition(INTAKE_SERVO_OUT);
+
+        startIntake();
+        closeShooter();
+
+        followLine(
+                flowerExitPose,
+                FLOWER_EXIT_SPEED
+        );
+
+        setState(AutoState.FLOWER_EXIT);
+    }
+
+    private void beginPark() {
+        stopFeeding();
+        closeShooter();
+        flywheel_motor.setPower(0);
+        intake_servo.setPosition(INTAKE_SERVO_IN);
+
+        Pose current = follower.pose();
+        if (state == AutoState.WAIT_FIRST_FLYWHEEL || state == AutoState.SHOOT_FIRST
+                || state == AutoState.RETURN_TO_SHOOT || state == AutoState.WAIT_SECOND_FLYWHEEL
+                || state == AutoState.SHOOT_SECOND) {
+            follower.follow(line(current, hiveClearancePose).linear(current, hiveClearancePose));
+            setState(AutoState.PARK_CLEAR_HIVE);
+            return;
+        }
+
+        if (current.y() < flowerExitPose.y() && current.x() < flowerExitPose.x()) {
+            // Route around Flower A if parking is requested from the garden.
+            Pose control = new Pose(shootPose.x(), flowerExitPose.y(), current.heading());
+            follower.follow(curve(current, control, parkPose).linear(current, parkPose));
+        } else {
+            follower.follow(line(current, parkPose).linear(current, parkPose));
+        }
+        setState(AutoState.PARK);
+    }
+
+    private double remainingAutoMs() {
+
+        return AUTONOMOUS_LENGTH_MS
+                - getRuntime() * 1000.0;
+    }
+
+    private void followLine(Pose target, double speed) {
+
+        Pose current = follower.pose();
+
+        Path path =
+                line(current, target)
+                        .linear(current, target)
+                        .with(
+                                Constants.foresightConfig
+                                        .maxVelocityConstraint
+                                        .at(speed)
+                        );
+
+        follower.follow(path);
+    }
 
     private void setState(AutoState newState) {
 
         state = newState;
-
         stateTimer.reset();
-
         velocityStableTracking = false;
     }
 
-    // =========================================
-    // PATH COMPLETION / TIMEOUT HANDLING
-    // =========================================
-
-    private boolean pathFinishedOrTimedOut(
-            double timeoutMs) {
+    private boolean pathFinishedOrTimedOut(double timeoutMs) {
 
         if (!follower.isBusy()) {
-
             return true;
         }
 
         if (stateTimer.milliseconds() >= timeoutMs) {
 
             recordTimeout();
-
             follower.stop();
 
             return true;
@@ -1058,20 +726,11 @@ public class blue_hiveup extends OpMode {
         return false;
     }
 
-    // =========================================
-    // TIMEOUT TELEMETRY
-    // =========================================
-
     private void recordTimeout() {
 
         timeoutCount++;
-
         lastTimeout = state.name();
     }
-
-    // =========================================
-    // FLYWHEEL VELOCITY CHECK
-    // =========================================
 
     private boolean flywheelReady() {
 
@@ -1087,7 +746,6 @@ public class blue_hiveup extends OpMode {
             if (!velocityStableTracking) {
 
                 velocityTimer.reset();
-
                 velocityStableTracking = true;
             }
 
@@ -1097,19 +755,13 @@ public class blue_hiveup extends OpMode {
         } else {
 
             velocityStableTracking = false;
-
             return false;
         }
     }
 
-    // =========================================
-    // SHOOTING CONTROL
-    // =========================================
-
     private void beginShooting(AutoState shootingState) {
 
         stopFeeding();
-
         openShooter();
 
         setState(shootingState);
@@ -1119,10 +771,21 @@ public class blue_hiveup extends OpMode {
 
         openShooter();
 
+        // Intake ON for first shot only.
+        // Intake OFF for all later shots.
+        boolean firstShooting =
+                state == AutoState.SHOOT_FIRST;
+
+        if (!firstShooting) {
+            intake_motor.setPower(0);
+        }
+
         if (stateTimer.milliseconds()
                 >= SHOOT_SERVO_DELAY_MS) {
 
-            intake_motor.setPower(INTAKE_POWER);
+            intake_motor.setPower(
+                    firstShooting ? INTAKE_POWER : 0
+            );
 
             transfer_motor.setPower(
                     TRANSFER_SHOOT_POWER
@@ -1156,13 +819,7 @@ public class blue_hiveup extends OpMode {
         );
     }
 
-    // =========================================
-    // INTAKE / TRANSFER MOTOR CONTROL
-    // =========================================
-
     private void startIntake() {
-
-        // Intake servo remains IN at 0.18.
 
         intake_motor.setPower(INTAKE_POWER);
 
@@ -1174,54 +831,31 @@ public class blue_hiveup extends OpMode {
     private void stopFeeding() {
 
         intake_motor.setPower(0);
-
         transfer_motor.setPower(0);
     }
 
-    // =========================================
-    // STOP
-    // =========================================
-
     @Override
     public void stop() {
-
-        // Save actual ending position for TeleOp.
-
         if (follower != null) {
-
-            OpModeStorage.autonomousEndPose =
-                    follower.pose();
-
+            OpModeStorage.autonomousEndPose = follower.pose();
             follower.stop();
         }
-
-        // Stop Limelight polling.
-
         if (limelight != null) {
-
             limelight.stop();
         }
-
-        // Stop all motors.
-
         if (flywheel_motor != null) {
-
             flywheel_motor.setPower(0);
         }
-
         if (intake_motor != null) {
-
             intake_motor.setPower(0);
         }
-
         if (transfer_motor != null) {
-
             transfer_motor.setPower(0);
         }
-
-        if (shooter_servo != null
-                && shooter_servo2 != null) {
-
+        if (intake_servo != null && (!isFlowerState() || flowerIsClear())) {
+            intake_servo.setPosition(INTAKE_SERVO_IN);
+        }
+        if (shooter_servo != null && shooter_servo2 != null) {
             closeShooter();
         }
     }
