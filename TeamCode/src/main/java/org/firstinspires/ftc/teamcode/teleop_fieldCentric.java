@@ -43,13 +43,21 @@ public class teleop_fieldCentric extends OpMode {
     Pose flowerC = new Pose(123.0, 92.0, Math.toRadians(0));
     Pose flowerD = new Pose(94.0, 18.0, Math.toRadians(270));
 
-    Path toTarget;
+    private static final int FLOWER_PICKUP_CYCLES = 3;
+    private static final double FLOWER_EXIT_TOLERANCE = 2.0;
+    private static final double FLOWER_APPROACH_SPEED = 30.0;
+    private static final double FLOWER_SWEEP_SPEED = 15.0;
 
-    Timer pathTimer = new Timer();
-    Timer shooterTimer = new Timer();
+    private enum PickupPhase {
+        IDLE, APPROACH, IN, OUT
+    }
 
-    boolean isAutoDrive = false;
-    boolean driverOverride = false;
+    private final Timer pathTimer = new Timer();
+    private final Timer shooterTimer = new Timer();
+    private PickupPhase pickupPhase = PickupPhase.IDLE;
+    private Pose flowerApproach;
+    private Pose flowerInside;
+    private int flowerCyclesCompleted;
 
 
     @Override
@@ -82,8 +90,6 @@ public class teleop_fieldCentric extends OpMode {
 
 
         // Pedro Pathing initialization
-        isAutoDrive = false;
-        driverOverride = false;
 
         follower = Constants.create(hardwareMap);
         follower.setPose(startPose);
@@ -123,37 +129,31 @@ public class teleop_fieldCentric extends OpMode {
     @Override
     public void loop() {
         flywheel_motor.setVelocity(flywheel_velocity);
-        // Start automatic driving
-        if (gamepad1.dpadDownWasPressed() && !isAutoDrive) {
-
-            Pose startPose = follower.pose();
-
-            toTarget = line(startPose, flowerA)
-                    .linear(startPose, flowerA);
-
-            follower.follow(toTarget);
-
-            isAutoDrive = true;
-            pathTimer.reset();
-            driverOverride = false;
-        }
-
-
-        // Check for driver override
-        driverOverride =
+        boolean driverOverride =
                 Math.abs(gamepad1.left_stick_x) > 0.2 ||
-                        Math.abs(gamepad1.left_stick_y) > 0.2 ||
-                        Math.abs(gamepad1.right_stick_x) > 0.2;
+                Math.abs(gamepad1.left_stick_y) > 0.2 ||
+                Math.abs(gamepad1.right_stick_x) > 0.2;
 
-        // End automatic driving after completion, timeout, or override
-        if (isAutoDrive &&
-                (!follower.isBusy() ||
-                        pathTimer.seconds() > 4 ||
-                        driverOverride)) {
-
-            follower.stop();
-            isAutoDrive = false;
+        follower.update();
+        if (pickupPhase != PickupPhase.IDLE) {
+            if (driverOverride) {
+                finishFlowerPickup(false);
+            } else {
+                updateFlowerPickup();
+            }
+        } else if (!driverOverride) {
+            if (gamepad1.dpadDownWasPressed()) {
+                beginFlowerPickup(flowerA);
+            } else if (gamepad1.dpadLeftWasPressed()) {
+                beginFlowerPickup(flowerB);
+            } else if (gamepad1.dpadUpWasPressed()) {
+                beginFlowerPickup(flowerC);
+            } else if (gamepad1.dpadRightWasPressed()) {
+                beginFlowerPickup(flowerD);
+            }
         }
+
+        boolean isAutoDrive = pickupPhase != PickupPhase.IDLE;
 
         // Manual field-centric driving
         if (!isAutoDrive) {
@@ -166,9 +166,127 @@ public class teleop_fieldCentric extends OpMode {
             );
 
             follower.manual(powers);
+            updateManualIntake();
         }
 
-        // Intake motor control
+        Pose robotPose = follower.pose();
+        telemetry.addData("Robot X", robotPose.x());
+        telemetry.addData("Robot Y", robotPose.y());
+        telemetry.addData("Robot Heading", Math.toDegrees(robotPose.heading()));
+        telemetry.addData("Auto Drive", isAutoDrive);
+        telemetry.addData("Driver Override", driverOverride);
+        telemetry.addData("Follower Mode", follower.mode());
+        telemetry.addData("Path Time", pathTimer.seconds());
+        telemetry.addData("Follower Busy", follower.isBusy());
+        telemetry.addData("Flower Pickup", pickupPhase);
+        telemetry.addData("Flower Cycles", flowerCyclesCompleted);
+        telemetry.addData("Intake Servo In", is_intake_servo_in);
+        telemetry.update();
+    }
+
+    private void beginFlowerPickup(Pose approach) {
+        Pose current = follower.pose();
+        flowerApproach = approach;
+
+        // Use the autonomous inside coordinates for A and B. Use the
+        // primary flower's 6.25-inch sweep along the heading for C and D.
+        double sweepDistance = 6.25;
+        if (flowerApproach == flowerA) {
+            sweepDistance = flowerA.x() - 12.75;
+        } else if (flowerApproach == flowerB) {
+            sweepDistance = 126.5 - flowerB.y();
+        }
+        double heading = flowerApproach.heading();
+        flowerInside = new Pose(
+                flowerApproach.x() + sweepDistance * Math.cos(heading),
+                flowerApproach.y() + sweepDistance * Math.sin(heading),
+                heading);
+        flowerCyclesCompleted = 0;
+
+        shooter_servo.setPosition(shooter_servo_closed);
+        shooter_servo2.setPosition(shooter_servo2_closed);
+        intake_servo.setPosition(intake_servo_out);
+        is_intake_servo_in = false;
+        intake_motor.setPower(1.0);
+        transfer_motor.setPower(0.5);
+
+        double headingError = current.heading() - heading;
+        double wrappedError = Math.atan2(Math.sin(headingError), Math.cos(headingError));
+        if (distanceBetween(current, flowerApproach) <= FLOWER_EXIT_TOLERANCE
+                && Math.abs(wrappedError) <= Math.toRadians(10)) {
+            followFlowerLeg(flowerInside, PickupPhase.IN, FLOWER_SWEEP_SPEED);
+        } else {
+            followFlowerLeg(flowerApproach, PickupPhase.APPROACH, FLOWER_APPROACH_SPEED);
+        }
+    }
+
+    private void updateFlowerPickup() {
+        double timeout = pickupPhase == PickupPhase.APPROACH ? 4.0 : 2.0;
+        if (follower.isBusy()) {
+            if (pathTimer.seconds() > timeout) {
+                finishFlowerPickup(false);
+            }
+            return;
+        }
+
+        Pose target = pickupPhase == PickupPhase.IN ? flowerInside : flowerApproach;
+        if (distanceBetween(follower.pose(), target) > FLOWER_EXIT_TOLERANCE) {
+            finishFlowerPickup(false);
+            return;
+        }
+
+        switch (pickupPhase) {
+            case APPROACH:
+                followFlowerLeg(flowerInside, PickupPhase.IN, FLOWER_SWEEP_SPEED);
+                break;
+            case IN:
+                followFlowerLeg(flowerApproach, PickupPhase.OUT, FLOWER_SWEEP_SPEED);
+                break;
+            case OUT:
+                flowerCyclesCompleted++;
+                if (flowerCyclesCompleted == FLOWER_PICKUP_CYCLES) {
+                    finishFlowerPickup(true);
+                } else {
+                    followFlowerLeg(flowerInside, PickupPhase.IN, FLOWER_SWEEP_SPEED);
+                }
+                break;
+        }
+    }
+
+    private void followFlowerLeg(Pose target, PickupPhase phase, double speed) {
+        Pose current = follower.pose();
+        Path path = line(current, target)
+                .linear(current, target)
+                .with(Constants.foresightConfig.maxVelocityConstraint.at(speed));
+        follower.follow(path);
+        pickupPhase = phase;
+        pathTimer.reset();
+    }
+
+    private static double distanceBetween(Pose first, Pose second) {
+        return Math.hypot(first.x() - second.x(), first.y() - second.y());
+    }
+
+    private void finishFlowerPickup(boolean completed) {
+        follower.stop();
+        pickupPhase = PickupPhase.IDLE;
+        intake_motor.setPower(0);
+        transfer_motor.setPower(0);
+        shooterTimer.reset();
+        if (completed) {
+            intake_servo.setPosition(intake_servo_in);
+            is_intake_servo_in = true;
+        }
+    }
+
+    @Override
+    public void stop() {
+        if (pickupPhase != PickupPhase.IDLE) {
+            finishFlowerPickup(false);
+        }
+    }
+
+    private void updateManualIntake() {
         if (gamepad2.right_trigger > 0.1 && gamepad2.left_trigger < 0.1) {
             shooter_servo.setPosition(shooter_servo_closed);
             shooter_servo2.setPosition(shooter_servo2_closed);
@@ -227,23 +345,6 @@ public class teleop_fieldCentric extends OpMode {
             }
         }
 
-        // Update Pedro Pathing
-        follower.update();
 
-        // Telemetry
-        Pose robotPose = follower.pose();
-
-        telemetry.addData("Robot X", robotPose.x());
-        telemetry.addData("Robot Y", robotPose.y());
-        telemetry.addData("Robot Heading",
-                Math.toDegrees(robotPose.heading()));
-
-        telemetry.addData("Auto Drive", isAutoDrive);
-        telemetry.addData("Driver Override", driverOverride);
-        telemetry.addData("Follower Mode", follower.mode());
-        telemetry.addData("Path Time", pathTimer.seconds());
-        telemetry.addData("Follower Busy", follower.isBusy());
-        telemetry.addData("Intake Servo In", is_intake_servo_in);
-        telemetry.update();
     }
 }

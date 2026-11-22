@@ -18,6 +18,9 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.Servo;
 
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
+import org.firstinspires.ftc.robotcore.external.navigation.Position;
 import org.firstinspires.ftc.teamcode.pedro.Constants;
 
 import java.util.List;
@@ -345,6 +348,39 @@ public class blue_hiveup_two_tips extends OpMode {
         telemetry.addData("Intake", "UP / STORED");
         telemetry.addData("Start X", shootPose.x());
         telemetry.addData("Start Y", shootPose.y());
+        telemetry.update();
+    }
+
+    @Override
+    public void init_loop() {
+        telemetry.addData("Configured field start (in)", "X %.2f, Y %.2f",
+                shootPose.x(), shootPose.y());
+
+        LLResult result = limelight.getLatestResult();
+        if (result == null || !result.isValid()
+                || result.getStaleness() > MAX_RESULT_AGE_MS) {
+            telemetry.addData("Limelight", "Waiting for a fresh AprilTag frame");
+        } else {
+            List<LLResultTypes.FiducialResult> tags = result.getFiducialResults();
+            boolean poseShown = false;
+            if (tags != null) {
+                for (LLResultTypes.FiducialResult tag : tags) {
+                    Pose3D pose = tag.getRobotPoseTargetSpace();
+                    if (pose == null) {
+                        continue;
+                    }
+
+                    Position offset = pose.getPosition().toUnit(DistanceUnit.INCH);
+                    // For a vertical tag, target-space X and Z are the floor-plane axes.
+                    telemetry.addData("Robot from tag " + tag.getFiducialId() + " (in)",
+                            "X (sideways) %+.2f, Y (out from tag) %+.2f", offset.x, offset.z);
+                    poseShown = true;
+                }
+            }
+            if (!poseShown) {
+                telemetry.addData("Limelight", "No AprilTag pose available");
+            }
+        }
         telemetry.update();
     }
 
