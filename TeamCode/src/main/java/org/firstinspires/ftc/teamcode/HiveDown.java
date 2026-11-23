@@ -87,8 +87,8 @@ public class HiveDown extends OpMode {
         DONE
     }
 
-    private final Settings blueSettings = createBlueSettings();
-    private final Settings redSettings = createRedSettings();
+    private final Settings blueSettings = createSettings(OpModeStorage.Alliance.BLUE);
+    private final Settings redSettings = createSettings(OpModeStorage.Alliance.RED);
     private Settings settings;
     private OpModeStorage.Alliance alliance = OpModeStorage.Alliance.BLUE;
     private Follower follower;
@@ -110,8 +110,10 @@ public class HiveDown extends OpMode {
     private HiveUpRouteChecks.FlowerExit flowerExit;
     private boolean flowerArmDown;
 
-    private static Settings createBlueSettings() {
+    private static Settings createSettings(OpModeStorage.Alliance alliance) {
         Settings settings = new Settings();
+
+        // Shared defaults
         settings.start = new Pose(59, 132, Math.toRadians(90));
         settings.firstShot = new Pose(59, 132, Math.toRadians(88));
         settings.firstHeadingTolerance = Math.toRadians(1);
@@ -161,60 +163,12 @@ public class HiveDown extends OpMode {
         settings.shooter2Open = 0.88;
         settings.shooter2Closed = 0.5;
         settings.limelightPollHz = 100;
-        return settings;
-    }
+        if (alliance == OpModeStorage.Alliance.BLUE) {
+            // Add Blue-only overrides here.
+        } else {
+            // Add Red-only overrides here.
+        }
 
-    private static Settings createRedSettings() {
-        Settings settings = new Settings();
-        settings.start = new Pose(59, 132, Math.toRadians(90));
-        settings.firstShot = new Pose(59, 132, Math.toRadians(88));
-        settings.firstHeadingTolerance = Math.toRadians(1);
-        settings.flowerClearance = new Pose(59, 117, Math.toRadians(88));
-        settings.flowerOut = new Pose(48, 122, Math.toRadians(90));
-        settings.flowerIn = new Pose(48, 126.5, Math.toRadians(90));
-        settings.secondShot = new Pose(33, 122, Math.toRadians(120));
-        settings.parkOne = Vector2D.cartesian(12, 112);
-        settings.parkTwo = Vector2D.cartesian(12, 93);
-
-        settings.firstVelocity = 1620;
-        settings.secondVelocity = 1600;
-        settings.velocityTolerance = 20;
-        settings.velocityStableMs = 200;
-        settings.firstSettleMs = 1000;
-        settings.firstSpinupMs = 3000;
-        settings.secondSpinupMs = 750;
-        settings.firstShotMs = 1500;
-        settings.secondShotMs = 1000;
-        settings.gateDelayMs = 150;
-        settings.transferShootPower = 0.60;
-
-        settings.flowerCycles = 3;
-        settings.flowerSpeed = 20;
-        settings.flowerTolerance = 2;
-        settings.flowerExitMargin = 1;
-        settings.clearanceTimeoutMs = 2000;
-        settings.approachTimeoutMs = 2500;
-        settings.pickupInTimeoutMs = 1500;
-        settings.pickupOutTimeoutMs = 2000;
-        settings.recoveryTimeoutMs = 1800;
-        settings.secondTravelTimeoutMs = 3000;
-        settings.parkTimeoutMs = 8000;
-        settings.startParkAtSeconds = 27;
-
-        settings.intakeUp = 0.18;
-        settings.intakeDown = 0.69;
-
-        settings.flywheelP = 270;
-        settings.flywheelI = 0;
-        settings.flywheelD = 0;
-        settings.flywheelF = 12.3;
-        settings.intakePickupPower = 1.0;
-        settings.transferPickupPower = 0.5;
-        settings.shooterOpen = 0.5;
-        settings.shooterClosed = 0.88;
-        settings.shooter2Open = 0.88;
-        settings.shooter2Closed = 0.5;
-        settings.limelightPollHz = 100;
         return settings;
     }
 

@@ -106,8 +106,10 @@ final class hiveup_two_tips implements HiveUpAutonomous.Route {
         double rotationTolerance;
     }
 
-    private static Settings createBlueSettings() {
+    private static Settings createSettings(OpModeStorage.Alliance alliance) {
         Settings settings = new Settings();
+
+        // Shared defaults
         settings.maxResultAgeMs = HiveUpAllianceDetector.MAX_RESULT_AGE_MS;
         settings.tagWaitMs = 500;
         settings.flywheelVelocity = 1620;
@@ -187,95 +189,17 @@ final class hiveup_two_tips implements HiveUpAutonomous.Route {
         settings.parkOne = Vector2D.cartesian(12, 112);
         settings.parkTwo = Vector2D.cartesian(12, 93);
         settings.rotationTolerance = Math.toRadians(5);
+        if (alliance == OpModeStorage.Alliance.BLUE) {
+            // Add Blue-only overrides here.
+        } else {
+            // Add Red-only overrides here.
+        }
+
         return settings;
     }
 
-    private static Settings createRedSettings() {
-        Settings settings = new Settings();
-        settings.maxResultAgeMs = 200;
-        settings.tagWaitMs = 500;
-        settings.flywheelVelocity = 1620;
-        settings.alternateFlywheelVelocity = 1620;
-        settings.secondaryFlywheelVelocity = 1600;
-        settings.flywheelP = 270;
-        settings.flywheelI = 0;
-        settings.flywheelD = 0;
-        settings.flywheelF = 12.3;
-        settings.flywheelWaitMs = 3000;
-        settings.velocityTolerance = 20;
-        settings.velocityStableMs = 200;
-        settings.shootDurationMs = 1500;
-        settings.shootServoDelayMs = 150;
-        settings.intakePower = 1.0;
-        settings.transferPickupPower = 0.5;
-        settings.transferShootPower = 0.60;
-        settings.cornerPickupSpeed = 15.0;
-        settings.pickupDwellMs = 500;
-        settings.rotateTimeoutMs = 3000;
-        settings.approachTimeoutMs = 4000;
-        settings.cornerPickupTimeoutMs = 4000;
-        settings.returnTimeoutMs = 5000;
-        settings.parkTimeoutMs = 8000;
-        settings.alternateTravelTimeoutMs = 10000;
-        settings.alternateSettleMs = 1000;
-        settings.autonomousLengthMs = 30000;
-        settings.alternateParkReserveMs = 3000;
-        settings.alternateFlowerBudgetMs = 4500;
-        settings.alternateClearanceBudgetMs = 1500;
-        settings.alternateFlowerPickupCycles = 3;
-        settings.alternateFlowerSpeed = 20.0;
-        settings.alternateClearanceTimeoutMs = 2000;
-        settings.alternateFlowerApproachTimeoutMs = 2500;
-        settings.alternateFlowerInTimeoutMs = 1500;
-        settings.alternateFlowerOutTimeoutMs = 2000;
-        settings.alternateFlowerRecoveryTimeoutMs = 1800;
-        settings.alternateFlowerExitTolerance = 2.0;
-        settings.secondaryTravelTimeoutMs = 1000;
-        settings.secondaryParkReserveMs = 1000;
-        settings.secondaryFlywheelWaitMs = 750;
-        settings.secondaryShootDurationMs = 1000;
-        settings.flowerPickupCycles = 4;
-        settings.flowerSweepSpeed = 15.0;
-        settings.flowerExitSpeed = 20.0;
-        settings.flowerApproachTimeoutMs = 5000;
-        settings.flowerSweepTimeoutMs = 2000;
-        settings.flowerExitTimeoutMs = 2000;
-        settings.flowerPositionTolerance = 2;
-        settings.flowerExitMargin = 1;
-        settings.alternateFlowerExitMargin = 1;
-        settings.shotPositionTolerance = 2;
-        settings.shotHeadingTolerance = Math.toRadians(5);
-        settings.hiveClearancePose = new Pose(24, 24, Math.toRadians(270));
-        settings.hiveClearanceTolerance = 2;
-        settings.parkFlowerClearanceControlX = 36;
-        settings.intakeServoIn = 0.18;
-        settings.intakeServoOut = 0.69;
-        settings.shooterServoClosed = 0.88;
-        settings.shooterServoOpen = 0.5;
-        settings.shooterServo2Closed = 0.5;
-        settings.shooterServo2Open = 0.88;
-        settings.shootPose = new Pose(56, 7.75, Math.toRadians(270));
-        settings.rotatePose = new Pose(56, 7.75, Math.toRadians(180));
-        settings.pickupApproachPose = new Pose(24, 7.75, Math.toRadians(185));
-        settings.finalCornerPose = new Pose(8, 7.75, Math.toRadians(185));
-        settings.returnControlPose = new Pose(28, 11.75, Math.toRadians(270));
-        settings.alternateShootPose = new Pose(59, 132, Math.toRadians(88));
-        settings.alternateFlowerClearancePose = new Pose(59, 117, Math.toRadians(88));
-        settings.alternateFlowerStartPose = new Pose(48, 122, Math.toRadians(90));
-        settings.alternateFlowerEndPose = new Pose(48, 126.5, Math.toRadians(90));
-        settings.secondaryShootPose = new Pose(33.0, 122.0, Math.toRadians(120));
-        settings.flowerStartPose = new Pose(19, 47, Math.toRadians(180));
-        settings.flowerInPose = new Pose(12.75, 47, Math.toRadians(180));
-        settings.flowerOutPose = new Pose(19, 47, Math.toRadians(180));
-        settings.flowerExitPose = new Pose(22, 47, Math.toRadians(180));
-        settings.parkOne = Vector2D.cartesian(12, 112);
-        settings.parkTwo = Vector2D.cartesian(12, 93);
-        settings.rotationTolerance = Math.toRadians(5);
-        return settings;
-    }
-
-    private final Settings blueSettings = createBlueSettings();
-    private final Settings redSettings = createRedSettings();
+    private final Settings blueSettings = createSettings(OpModeStorage.Alliance.BLUE);
+    private final Settings redSettings = createSettings(OpModeStorage.Alliance.RED);
     private Settings settings;
     private Follower follower;
     private AutonParking parking;
