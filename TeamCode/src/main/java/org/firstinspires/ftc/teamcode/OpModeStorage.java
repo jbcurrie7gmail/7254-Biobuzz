@@ -16,9 +16,18 @@ public class OpModeStorage {
 
     static Alliance alliance = Alliance.BLUE;
     public static Pose autonomousEndPose;
+    static HiveUpRouteChecks.FlowerExit autonomousIntakeExit;
+    static double autonomousIntakeDownPosition;
 
     static void beginAutonomous(Alliance selectedAlliance) {
         alliance = selectedAlliance;
-        autonomousEndPose = null;
+        saveAutonomousEnd(null, null, 0);
+    }
+
+    static void saveAutonomousEnd(Pose pose, HiveUpRouteChecks.FlowerExit intakeExit,
+                                  double intakeDownPosition) {
+        autonomousEndPose = pose;
+        autonomousIntakeExit = intakeExit;
+        autonomousIntakeDownPosition = intakeDownPosition;
     }
 }
